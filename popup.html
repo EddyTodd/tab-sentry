@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>No New Tabs</title>
+    <style>
+      body { margin: 12px; font: 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #eee; background: #1f1f1f; }
+      .row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .label { font-weight:600; }
+      .switch {
+        position: relative; width: 48px; height: 26px; background: #555; border-radius: 999px; cursor: pointer;
+      }
+      .knob {
+        position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #ccc; transition: left .15s ease, background .15s ease;
+      }
+      .on .switch { background: #3b82f6; }
+      .on .knob { left: 25px; background: #fff; }
+      .hint { margin-top: 10px; font-size: 12px; color: #aaa; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap" class="row">
+      <div class="label">Block ALL new tabs</div>
+      <div id="toggle" class="switch"><div class="knob"></div></div>
+    </div>
+    <div class="hint">Default OFF. Turn ON to hard-block and auto-close any new tabs. No whitelist/allow-once.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
