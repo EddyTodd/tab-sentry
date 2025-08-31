@@ -27,10 +27,6 @@ function injectKillSwitch() {
   });
 }
 
-// Helper: get current tabId for executeScript
 function getCurrentTabId() {
-  // Content scripts don’t have tabId directly.
-  // The background script can forward tabId to us, or
-  // you can send a message to background to run executeScript for you.
-  return chrome.devtools?.inspectedWindow?.tabId; // or handle via background
+  return chrome.devtools?.inspectedWindow?.tabId;
 }
