@@ -1,54 +1,81 @@
-// Global ON/OFF state (persisted in storage)
-let enabled = false;
-
-// Track last active tab per window so we can refocus quickly
-const lastActiveByWindow = new Map();
+const STATE_KEY = 'enabled';
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.set({ nnthk_enabled: false }); // OFF by default
+  chrome.storage.local.get(STATE_KEY, (s) => {
+    if (typeof s[STATE_KEY] !== 'boolean') {
+      chrome.storage.local.set({ [STATE_KEY]: false });
+    }
+  });
 });
 
-chrome.storage.sync.get("nnthk_enabled", ({ nnthk_enabled }) => {
-  enabled = !!nnthk_enabled;
+function isEnabled() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(STATE_KEY, (s) => resolve(!!s[STATE_KEY]));
+  });
+}
+
+const lastActiveTabByWindow = new Map();
+
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+  lastActiveTabByWindow.set(windowId, tabId);
 });
 
-// Keep last active tab ID for each window
-chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
-  lastActiveByWindow.set(windowId, tabId);
-});
-
-// React to toggle changes from popup/content
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.nnthk_enabled) {
-    enabled = !!changes.nnthk_enabled.newValue;
-  }
-});
-
-// Hard-kill: Close ANY newly created tab immediately when enabled.
-// Then force-focus the previous active tab ASAP.
-chrome.tabs.onCreated.addListener(async (tab) => {
-  if (!enabled) return;
-
-  // Edge cases: devtools or special tabs might not have normal IDs/URLs yet.
-  const id = tab.id;
-  const winId = tab.windowId;
-
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
   try {
-    // Close the tab if it exists
-    if (typeof id === "number") {
-      await chrome.tabs.remove(id);
-    }
-  } catch (_) {
-    // Already gone or not closable; ignore
-  }
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
+    if (tab && tab.id) lastActiveTabByWindow.set(windowId, tab.id);
+  } catch {}
+});
 
-  // Force focus back to the last known active tab (if still there)
-  if (typeof winId === "number") {
-    const last = lastActiveByWindow.get(winId);
-    if (typeof last === "number") {
-      try {
-        await chrome.tabs.update(last, { active: true });
-      } catch (_) {}
+async function nukeTabAndRefocus(createdTabId, sourceTabId, sourceWindowId) {
+  try { await chrome.tabs.remove(createdTabId); } catch {}
+  if (sourceTabId) {
+    try { await chrome.tabs.update(sourceTabId, { active: true }); return; } catch {}
+  }
+  const fallbackTabId = lastActiveTabByWindow.get(sourceWindowId);
+  if (fallbackTabId) {
+    try { await chrome.tabs.update(fallbackTabId, { active: true }); } catch {}
+  }
+}
+
+chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
+  if (!(await isEnabled())) return;
+  nukeTabAndRefocus(details.tabId, details.sourceTabId, details.windowId);
+});
+
+chrome.tabs.onCreated.addListener(async (tab) => {
+  if (!(await isEnabled())) return;
+
+  const sourceTabId = tab.openerTabId || null;
+  const windowId = tab.windowId || null;
+
+  nukeTabAndRefocus(tab.id, sourceTabId, windowId);
+});
+
+chrome.windows.onCreated.addListener(async (win) => {
+  if (!(await isEnabled())) return;
+  try {
+    await chrome.windows.remove(win.id);
+    const windows = await chrome.windows.getAll({ populate: true });
+    if (windows.length) {
+      const lastWin = windows.find(w => w.focused) || windows[0];
+      if (lastWin && lastWin.id != null) {
+        const lastTabId = lastActiveTabByWindow.get(lastWin.id);
+        if (lastTabId) await chrome.tabs.update(lastTabId, { active: true });
+      }
     }
+  } catch {}
+});
+
+chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
+  if (msg && msg.type === 'broadcast-enabled-change') {
+    chrome.tabs.query({}, (tabs) => {
+      for (const t of tabs) {
+        try {
+          chrome.tabs.sendMessage(t.id, { type: 'enabled-changed', enabled: msg.enabled });
+        } catch {}
+      }
+    });
   }
 });

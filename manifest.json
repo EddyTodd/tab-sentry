@@ -2,21 +2,22 @@
   "manifest_version": 3,
   "name": "Tab Sentry",
   "version": "1.0.0",
-  "description": "When enabled, blocks and auto-closes ALL new tabs/popups. Single toggle.",
-  "permissions": ["tabs", "storage", "scripting"],
+  "description": "When ON, block all new tabs/windows everywhere. First prevent, then instantly close and refocus if anything slips.",
+  "action": { "default_popup": "popup.html" },
+  "permissions": ["scripting", "tabs", "storage", "webNavigation", "windows"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
-  "action": {
-    "default_title": "No New Tabs",
-    "default_popup": "popup.html"
-  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
-  "icons": {},
-  "minimum_chrome_version": "114"
+  "icons": {
+    "16": "icon/icon16.png",
+    "48": "icon/icon48.png",
+    "128": "icon/icon128.png"
+  }
 }
