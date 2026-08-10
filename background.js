@@ -1,7 +1,6 @@
 importScripts('tab-policy.js');
 
 const STATE_KEY = 'enabled';
-const LAST_BLOCKED_KEY = 'lastBlocked';
 const BLOCKED_COUNT_KEY = 'blockedCount';
 const CLASSIFICATION_DELAY_MS = 100;
 const FALLBACK_DELAY_MS = 750;
@@ -50,28 +49,20 @@ async function refocusSource(sourceTabId) {
   }
 }
 
-async function rememberBlocked(url, sourceTabId) {
+async function recordBlocked() {
   const previous = await chrome.storage.session.get(BLOCKED_COUNT_KEY);
   const blockedCount = Number(previous[BLOCKED_COUNT_KEY] || 0) + 1;
 
-  await chrome.storage.session.set({
-    [LAST_BLOCKED_KEY]: {
-      url: TabSentryPolicy.normalizeUrl(url),
-      sourceTabId,
-      blockedAt: Date.now()
-    },
-    [BLOCKED_COUNT_KEY]: blockedCount
-  });
-
+  await chrome.storage.session.set({ [BLOCKED_COUNT_KEY]: blockedCount });
   await chrome.action.setBadgeBackgroundColor({ color: '#b3261e' });
   await chrome.action.setBadgeText({ text: String(Math.min(blockedCount, 99)) });
 }
 
-async function blockTarget(tabId, sourceTabId, url) {
+async function blockTarget(tabId, sourceTabId) {
   finishClassification(tabId);
 
   try {
-    await rememberBlocked(url, sourceTabId);
+    await recordBlocked();
   } catch {
     // Storage or badge failures must never let the popup survive.
   }
@@ -125,7 +116,7 @@ async function classifyTarget(tabId, sourceTabId, url, blockTransient = false) {
       return;
     }
 
-    await blockTarget(tabId, sourceTabId, url);
+    await blockTarget(tabId, sourceTabId);
   } finally {
     classifyingTabs.delete(tabId);
   }
@@ -176,12 +167,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'register-new-tab-intent') {
     const registered = ledger.register(sender.tab?.id, message.url);
-    sendResponse({ registered });
-    return false;
-  }
-
-  if (message.type === 'allow-next-tab') {
-    const registered = ledger.allowNext(message.tabId);
     sendResponse({ registered });
     return false;
   }
