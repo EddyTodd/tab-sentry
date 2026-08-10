@@ -49,29 +49,15 @@ test('does not let an ad consume an intended link', () => {
   assert.equal(ledger.consume(10, 'https://example.com/wanted').allowed, true);
 });
 
-test('allow-once is source-tab-specific and single-use', () => {
-  const ledger = createIntentLedger();
-  ledger.allowNext(10);
-  assert.equal(ledger.consume(11, 'https://example.com/legitimate').allowed, false);
-  assert.deepEqual(ledger.consume(10, 'https://example.com/legitimate'), {
-    allowed: true,
-    reason: 'allow-once'
-  });
-  assert.equal(ledger.consume(10, 'https://example.com/second').allowed, false);
-});
-
-test('intent and allow-once exceptions expire', () => {
+test('registered link intents expire', () => {
   let currentTime = 1_000;
   const ledger = createIntentLedger({
     intentTtlMs: 100,
-    allowOnceTtlMs: 100,
     now: () => currentTime
   });
 
   ledger.register(10, 'https://example.com/wanted');
-  ledger.allowNext(11);
   currentTime += 101;
 
   assert.equal(ledger.consume(10, 'https://example.com/wanted').allowed, false);
-  assert.equal(ledger.consume(11, 'https://example.com/legitimate').allowed, false);
 });
