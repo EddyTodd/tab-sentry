@@ -2,24 +2,36 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Tab Lockdown</title>
+    <title>Tab Sentry</title>
     <style>
-      body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 12px; color: #eaeaea; background: #1f1f1f; min-width: 220px; }
-      .row { display: flex; align-items: center; justify-content: space-between; }
-      .label { font-weight: 600; }
-      .switch { position: relative; width: 48px; height: 26px; background: #555; border-radius: 13px; cursor: pointer; transition: background .15s ease; }
+      body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 14px; color: #eaeaea; background: #1f1f1f; min-width: 280px; }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .label { font-weight: 650; }
+      .switch { position: relative; width: 48px; height: 26px; padding: 0; border: 0; background: #555; border-radius: 13px; cursor: pointer; transition: background .15s ease; }
       .switch.on { background: #4caf50; }
       .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; background: #fff; border-radius: 10px; transition: left .15s ease; }
       .switch.on .knob { left: 25px; }
-      .hint { margin-top: 8px; color: #b9b9b9; }
+      .hint { margin: 10px 0 12px; color: #b9b9b9; font-size: 12px; }
+      .actions { display: grid; gap: 8px; }
+      .action { width: 100%; padding: 8px 10px; color: #f3f3f3; background: #383838; border: 1px solid #555; border-radius: 6px; cursor: pointer; }
+      .action:hover:not(:disabled) { background: #454545; }
+      .action:disabled { cursor: default; opacity: .45; }
+      .status { min-height: 18px; margin-top: 9px; color: #9ecbff; font-size: 12px; }
     </style>
   </head>
   <body>
     <div class="row">
-      <div class="label">Tab Lockdown</div>
-      <div id="toggle" class="switch"><div class="knob"></div></div>
+      <div class="label">Smart popup blocking</div>
+      <button id="toggle" class="switch" type="button" role="switch" aria-checked="false" aria-label="Toggle Tab Sentry">
+        <span class="knob"></span>
+      </button>
     </div>
-    <div class="hint">Blocks all new tabs/windows when ON.</div>
+    <div class="hint">Manual tabs and links you intentionally open stay allowed.</div>
+    <div class="actions">
+      <button id="allowNext" class="action" type="button">Allow next page-created tab</button>
+      <button id="reopenLast" class="action" type="button">Reopen last blocked tab</button>
+    </div>
+    <div id="status" class="status" aria-live="polite"></div>
     <script src="popup.js"></script>
   </body>
 </html>
