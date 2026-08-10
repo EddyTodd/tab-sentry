@@ -33,10 +33,8 @@
 
   function createIntentLedger(options = {}) {
     const intentTtlMs = options.intentTtlMs ?? 30_000;
-    const allowOnceTtlMs = options.allowOnceTtlMs ?? 30_000;
     const now = options.now ?? Date.now;
     const intentsByTab = new Map();
-    const allowOnceByTab = new Map();
 
     function clean(tabId) {
       const currentTime = now();
@@ -45,10 +43,6 @@
 
       if (liveIntents.length) intentsByTab.set(tabId, liveIntents);
       else intentsByTab.delete(tabId);
-
-      if ((allowOnceByTab.get(tabId) || 0) <= currentTime) {
-        allowOnceByTab.delete(tabId);
-      }
     }
 
     function register(tabId, url) {
@@ -63,12 +57,6 @@
         expiresAt: now() + intentTtlMs
       });
       intentsByTab.set(tabId, withoutDuplicate.slice(-5));
-      return true;
-    }
-
-    function allowNext(tabId) {
-      if (!Number.isInteger(tabId)) return false;
-      allowOnceByTab.set(tabId, now() + allowOnceTtlMs);
       return true;
     }
 
@@ -89,20 +77,14 @@
         return { allowed: true, reason: 'matched-link' };
       }
 
-      if (allowOnceByTab.has(tabId)) {
-        allowOnceByTab.delete(tabId);
-        return { allowed: true, reason: 'allow-once' };
-      }
-
       return { allowed: false, reason: null };
     }
 
     function drop(tabId) {
       intentsByTab.delete(tabId);
-      allowOnceByTab.delete(tabId);
     }
 
-    return { register, allowNext, consume, drop };
+    return { register, consume, drop };
   }
 
   return { normalizeUrl, isTransientUrl, isProtectablePageUrl, createIntentLedger };
