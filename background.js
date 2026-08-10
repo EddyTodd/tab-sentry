@@ -12,8 +12,9 @@ const classifiedTabs = new Set();
 const classifyingTabs = new Set();
 
 let enabled = false;
+let stateChangeVersion = 0;
 const stateReady = chrome.storage.local.get(STATE_KEY).then((stored) => {
-  enabled = !!stored[STATE_KEY];
+  if (stateChangeVersion === 0) enabled = !!stored[STATE_KEY];
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -25,6 +26,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && STATE_KEY in changes) {
+    stateChangeVersion += 1;
     enabled = !!changes[STATE_KEY].newValue;
   }
 });
@@ -135,7 +137,7 @@ function scheduleClassification(tabId, sourceTabId, url, delayMs, blockTransient
   setTimeout(() => {
     const pending = pendingTargets.get(tabId);
     if (!pending || classifiedTabs.has(tabId)) return;
-    classifyTarget(tabId, pending.sourceTabId, pending.url, blockTransient);
+    return classifyTarget(tabId, pending.sourceTabId, pending.url, blockTransient);
   }, delayMs);
 }
 
