@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Sentry",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Blocks unwanted page-created tabs while preserving Chrome tabs and links you intentionally open.",
   "minimum_chrome_version": "102",
   "action": {
