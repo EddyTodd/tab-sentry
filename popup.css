@@ -1,0 +1,115 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0c111b;
+  color: #edf3fa;
+  font-size: 13px;
+  line-height: 1.45;
+}
+* { box-sizing: border-box; }
+body { width: 352px; margin: 0; }
+button { font: inherit; }
+button:focus-visible { outline: 2px solid #86dfe5; outline-offset: 3px; }
+.app { padding: 20px; }
+.header, .brand, .setting-row, .section-heading, .stats-top, footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header { margin-bottom: 17px; }
+.brand { justify-content: flex-start; gap: 11px; }
+.brand-icon {
+  width: 39px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  color: #7fdee6;
+  border: 1px solid #255e66;
+  background: #103039;
+  border-radius: 12px;
+}
+h1 { font-size: 16px; letter-spacing: -.35px; margin: 0; font-weight: 720; }
+h2 { font-size: 13px; margin: 0; font-weight: 670; }
+.subtitle { margin: 1px 0 0; font-size: 11px; color: #92a2b6; }
+.status-pill {
+  border: 1px solid #225e53;
+  background: #12302d;
+  color: #89e0c3;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+}
+.status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+.status-pill.off { color: #a6b2c1; background: #1c2532; border-color: #334052; }
+.card {
+  background: #151e2a;
+  border: 1px solid #2a3749;
+  border-radius: 13px;
+}
+.protection { padding: 15px; }
+.muted { color: #95a5b8; font-size: 11px; margin: 4px 0 0; }
+.setting-row { gap: 12px; }
+.switch {
+  flex-shrink: 0;
+  border: 1px solid #526074;
+  padding: 0;
+  width: 43px;
+  height: 25px;
+  border-radius: 999px;
+  background: #465364;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.switch[aria-checked="true"] { background: #48bbc0; border-color: #48bbc0; }
+.switch:disabled { opacity: .35; cursor: not-allowed; }
+.switch-thumb {
+  display: block;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  margin-left: 2px;
+  background: #f7fbff;
+  box-shadow: 0 1px 3px #0007;
+  transition: transform .15s ease;
+}
+.switch[aria-checked="true"] .switch-thumb { transform: translateX(18px); }
+.stats { margin-top: 11px; padding: 15px; }
+.stats-top { color: #9dafc3; }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.stats-top svg { color: #7fdee6; }
+.stat-number { font-size: 38px; line-height: 1.2; font-weight: 710; letter-spacing: -1.5px; padding-top: 5px; font-variant-numeric: tabular-nums; }
+.section { margin-top: 20px; }
+.section-heading { margin-bottom: 9px; min-height: 20px; gap: 12px; }
+.site-host { font-size: 11px; color: #8de0e5; max-width: 165px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-setting { padding: 13px 14px; }
+.setting-title { margin: 0; font-weight: 600; font-size: 12px; }
+.text-button { background: none; border: 0; color: #8cdae1; padding: 0 3px; cursor: pointer; font-size: 11px; }
+.text-button:hover { color: #befcff; }
+.activity-card { padding: 4px 13px; max-height: 180px; overflow: auto; }
+.activity-empty { margin: 12px 0; text-align: center; }
+.activity-list { padding: 0; list-style: none; margin: 0; }
+.activity-item { display: flex; align-items: center; gap: 9px; padding: 11px 0; }
+.activity-item + .activity-item { border-top: 1px solid #293647; }
+.activity-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 27px;
+  height: 27px;
+  background: #3c252e;
+  color: #f6a4b0;
+  border-radius: 8px;
+  font-size: 15px;
+}
+.activity-text { min-width: 0; flex: 1; }
+.activity-target { color: #e4edf7; font-size: 11px; font-weight: 640; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-origin { color: #92a2b7; font-size: 10px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-time { color: #92a2b7; font-size: 10px; white-space: nowrap; }
+footer { align-items: flex-start; gap: 12px; margin-top: 16px; color: #75889f; font-size: 10px; }
+footer #message { flex: 1; }
+.version { flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
