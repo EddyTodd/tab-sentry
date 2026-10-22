@@ -15,6 +15,8 @@
   let refreshVersion = 0;
   let parentAllowed = false;
   let parentStrict = false;
+  let suppressClickOn = null;
+  let suppressClickUntil = 0;
 
   function hostname() {
     return location.protocol === 'http:' || location.protocol === 'https:'
@@ -94,6 +96,8 @@
       }
     }
     repaired.clear();
+    suppressClickOn = null;
+    suppressClickUntil = 0;
   }
 
   function findOverlay(event) {
@@ -155,6 +159,8 @@
     // For a first click already aimed at the old overlay, suppress its ad
     // handler and attempt native playback within the real user gesture.
     if (event.type === 'pointerdown') {
+      suppressClickOn = overlay;
+      suppressClickUntil = Date.now() + 1_000;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (media instanceof HTMLVideoElement && media.paused) {
@@ -162,6 +168,18 @@
       }
     }
   }
+
+  window.addEventListener('click', (event) => {
+    if (!enabled || siteAllowed || !suppressClickOn ||
+        Date.now() > suppressClickUntil) return;
+    const target = event.target;
+    if (target === suppressClickOn ||
+        (target instanceof Element && suppressClickOn.contains(target))) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    suppressClickOn = null;
+  }, true);
 
   window.addEventListener('pointerover', tryRepair, true);
   window.addEventListener('pointerdown', tryRepair, true);
