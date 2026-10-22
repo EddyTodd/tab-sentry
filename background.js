@@ -5,6 +5,7 @@ const ALLOWED_SITES_KEY = 'allowedSites';
 const BLOCKED_COUNT_KEY = 'blockedCount';
 const RECENT_BLOCKED_KEY = 'recentBlocked';
 const BLANK_TARGET_GRACE_MS = 1_200;
+const CLASSIFICATION_GRACE_MS = 90;
 
 const ledger = TabSentryPolicy.createIntentLedger();
 const pendingTargets = new Map();
@@ -12,15 +13,15 @@ const processingTabs = new Set();
 
 let enabled = false;
 let allowedSites = {};
-let configurationVersion = 0;
+let enabledChangeVersion = 0;
+let sitesChangeVersion = 0;
 let statisticsQueue = Promise.resolve();
 
 const configurationReady = chrome.storage.local
   .get([STATE_KEY, ALLOWED_SITES_KEY])
   .then((stored) => {
-    if (configurationVersion !== 0) return;
-    enabled = stored[STATE_KEY] === true;
-    allowedSites = stored[ALLOWED_SITES_KEY] || {};
+    if (enabledChangeVersion === 0) enabled = stored[STATE_KEY] === true;
+    if (sitesChangeVersion === 0) allowedSites = stored[ALLOWED_SITES_KEY] || {};
   }).catch(() => {
     enabled = false;
     allowedSites = {};
@@ -35,9 +36,14 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (STATE_KEY in changes || ALLOWED_SITES_KEY in changes) configurationVersion++;
-  if (STATE_KEY in changes) enabled = changes[STATE_KEY].newValue === true;
-  if (ALLOWED_SITES_KEY in changes) allowedSites = changes[ALLOWED_SITES_KEY].newValue || {};
+  if (STATE_KEY in changes) {
+    enabledChangeVersion++;
+    enabled = changes[STATE_KEY].newValue === true;
+  }
+  if (ALLOWED_SITES_KEY in changes) {
+    sitesChangeVersion++;
+    allowedSites = changes[ALLOWED_SITES_KEY].newValue || {};
+  }
 });
 
 function updateBadge(count) {
@@ -106,25 +112,27 @@ async function blockTarget(candidate, sourceTab) {
     return;
   }
 
+  if (wasFocused) {
+    try {
+      const source = await chrome.tabs.get(candidate.sourceTabId);
+      const focusedWindow = await chrome.windows.getLastFocused();
+      // Do not steal focus if the user has moved to another window.
+      if (focusedWindow.id === targetTab.windowId ||
+          focusedWindow.id === source.windowId) {
+        await chrome.tabs.update(candidate.sourceTabId, { active: true });
+        if (source.windowId !== targetTab.windowId) {
+          await chrome.windows.update(source.windowId, { focused: true });
+        }
+      }
+    } catch {
+      // Source page may have closed.
+    }
+  }
+
   try {
     await recordBlocked(sourceTab.url, candidate.url);
   } catch {
     // Badge or storage errors should never undo successful blocking.
-  }
-
-  if (!wasFocused) return;
-  try {
-    const source = await chrome.tabs.get(candidate.sourceTabId);
-    const focusedWindow = await chrome.windows.getLastFocused();
-    // Do not steal focus if the user has moved to another window.
-    if (focusedWindow.id !== targetTab.windowId &&
-        focusedWindow.id !== source.windowId) return;
-    await chrome.tabs.update(candidate.sourceTabId, { active: true });
-    if (source.windowId !== targetTab.windowId) {
-      await chrome.windows.update(source.windowId, { focused: true });
-    }
-  } catch {
-    // Source page may have closed.
   }
 }
 
@@ -136,7 +144,7 @@ async function processTarget(tabId) {
   try {
     await configurationReady;
     while ((observed = pendingTargets.get(tabId))) {
-      if (TabSentryPolicy.isTransientUrl(observed.url) && !observed.expired) return;
+      if (!observed.expired) return;
       if (!enabled) {
         forgetTarget(tabId);
         return;
@@ -173,8 +181,7 @@ async function processTarget(tabId) {
   } finally {
     processingTabs.delete(tabId);
     const latest = pendingTargets.get(tabId);
-    if (latest && latest !== observed &&
-        (!TabSentryPolicy.isTransientUrl(latest.url) || latest.expired)) {
+    if (latest && latest !== observed && latest.expired) {
       void processTarget(tabId);
     }
   }
@@ -199,7 +206,11 @@ function watchTarget(tabId, sourceTabId, sourceFrameId, url) {
       void processTarget(tabId);
     }, BLANK_TARGET_GRACE_MS);
   } else {
-    void processTarget(tabId);
+    candidate.timer = setTimeout(() => {
+      if (pendingTargets.get(tabId) !== candidate) return;
+      candidate.expired = true;
+      void processTarget(tabId);
+    }, CLASSIFICATION_GRACE_MS);
   }
 }
 
