@@ -17,6 +17,8 @@
     strict = event.detail.strict === true;
   }, true);
 
+  window.dispatchEvent(new CustomEvent('tab-sentry:shield-ready'));
+
   function findAnchor(element) {
     return element instanceof Element ? element.closest('a[href]') : null;
   }
