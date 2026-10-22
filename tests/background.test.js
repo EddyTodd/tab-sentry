@@ -122,12 +122,22 @@ test('allows exactly one user-intended tab from the originating frame', async ()
   const h = harness();
   assert.equal(h.register('https://wanted.example/path', 3).registered, true);
   h.created(2, 'https://wanted.example/path', 3);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(h.tabData.has(2), true);
 
   h.created(3, 'https://wanted.example/path', 3);
   await h.until(() => h.removed.includes(3));
   assert.equal(h.tabData.has(2), true);
+});
+
+test('accepts a user intent arriving shortly after Chrome creates a target', async () => {
+  const h = harness();
+  h.created(2, 'https://wanted.example/path', 0);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  h.register('https://wanted.example/path', 0);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(h.tabData.has(2), true);
+  assert.deepEqual(h.removed, []);
 });
 
 test('does not let an iframe intent authorize another frame', async () => {
@@ -140,7 +150,7 @@ test('does not let an iframe intent authorize another frame', async () => {
 test('honors a per-site allow exception', async () => {
   const h = harness({ allowedSites: { 'source.example': true } });
   h.created(2, 'https://ads.example/popup');
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(h.tabData.has(2), true);
   assert.equal(h.session.data.blockedCount, undefined);
 });
@@ -148,7 +158,7 @@ test('honors a per-site allow exception', async () => {
 test('never blocks while protection is disabled', async () => {
   const h = harness({ enabled: false });
   h.created(2, 'https://ads.example/popup');
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(h.tabData.has(2), true);
 });
 
@@ -171,6 +181,6 @@ test('uses updated destination instead of stale about:blank', async () => {
 test('does not classify a navigation with no valid source tab', async () => {
   const h = harness();
   h.created(2, 'https://ads.example/popup', 0, -1);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(h.tabData.has(2), true);
 });
