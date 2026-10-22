@@ -3,7 +3,7 @@
   "name": "Tab Sentry",
   "version": "1.4.0",
   "description": "Blocks unwanted popups and repairs deceptive video-player overlays.",
-  "minimum_chrome_version": "102",
+  "minimum_chrome_version": "111",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Tab Sentry"
