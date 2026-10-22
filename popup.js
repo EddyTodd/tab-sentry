@@ -2,9 +2,14 @@ const STATE_KEY = 'enabled';
 const ALLOWED_SITES_KEY = 'allowedSites';
 const BLOCKED_COUNT_KEY = 'blockedCount';
 const RECENT_BLOCKED_KEY = 'recentBlocked';
+const SHIELD_KEY = 'shieldEnabled';
+const STRICT_KEY = 'strictSites';
 const DIAGNOSTIC_EVENTS_KEY = 'diagnosticEvents';
 
 const toggle = document.getElementById('toggle');
+const shieldToggle = document.getElementById('shield-toggle');
+const strictToggle = document.getElementById('strict-toggle');
+const shieldDescription = document.getElementById('shield-description');
 const siteToggle = document.getElementById('site-toggle');
 const siteHostLabel = document.getElementById('site-host');
 const siteDescription = document.getElementById('site-description');
@@ -23,6 +28,8 @@ const copyButton = document.getElementById('copy-diagnostic');
 let enabled = false;
 let currentHost = null;
 let allowedSites = {};
+let shieldEnabled = true;
+let strictSites = {};
 let currentTabId = null;
 let diagnosticEvents = [];
 let privateTab = false;
@@ -38,6 +45,14 @@ function setProtection(value) {
   statusLabel.textContent = enabled ? 'Protected' : 'Off';
 }
 
+function setShieldControl(value) {
+  shieldEnabled = value !== false;
+  shieldToggle.setAttribute('aria-checked', String(shieldEnabled));
+  shieldDescription.textContent = shieldEnabled
+    ? 'Stop popup scripts and deceptive video overlays.'
+    : 'Shield paused. Tab blocking remains available.';
+}
+
 function setSiteControl() {
   const allowed = !!currentHost && allowedSites[currentHost] === true;
   siteToggle.disabled = !currentHost;
@@ -45,6 +60,10 @@ function setSiteControl() {
   siteDescription.textContent = currentHost
     ? (allowed ? 'Popup blocking is bypassed here.' : 'Make an exception for sites you trust.')
     : 'Site controls are available on web pages.';
+  strictToggle.disabled = !currentHost || allowed;
+  strictToggle.setAttribute('aria-checked', String(
+    !!currentHost && strictSites[currentHost] === true
+  ));
 }
 
 function getHost(url) {
@@ -100,13 +119,15 @@ function updateStatistics(stored) {
 async function initialize() {
   try {
     const [settings, stats, activeTabs] = await Promise.all([
-      chrome.storage.local.get([STATE_KEY, ALLOWED_SITES_KEY]),
+      chrome.storage.local.get([STATE_KEY, ALLOWED_SITES_KEY, SHIELD_KEY, STRICT_KEY]),
       chrome.storage.session.get([BLOCKED_COUNT_KEY, RECENT_BLOCKED_KEY, DIAGNOSTIC_EVENTS_KEY]),
       chrome.tabs.query({ active: true, currentWindow: true })
     ]);
 
     allowedSites = settings[ALLOWED_SITES_KEY] || {};
+    strictSites = settings[STRICT_KEY] || {};
     setProtection(settings[STATE_KEY]);
+    setShieldControl(settings[SHIELD_KEY]);
     currentHost = getHost(activeTabs[0]?.url);
     currentTabId = activeTabs[0]?.id ?? null;
     privateTab = activeTabs[0]?.incognito === true;
@@ -120,6 +141,8 @@ async function initialize() {
     setMessage('Could not load extension settings. Reopen this popup.');
     toggle.disabled = true;
     siteToggle.disabled = true;
+    strictToggle.disabled = true;
+    shieldToggle.disabled = true;
     diagnoseButton.disabled = true;
   }
 }
@@ -135,6 +158,37 @@ toggle.addEventListener('click', async () => {
     setMessage('Could not update protection. Try again.');
   } finally {
     toggle.disabled = false;
+  }
+});
+
+shieldToggle.addEventListener('click', async () => {
+  shieldToggle.disabled = true;
+  try {
+    const next = !shieldEnabled;
+    await chrome.storage.local.set({ [SHIELD_KEY]: next });
+    setShieldControl(next);
+    setMessage(next ? 'Playback Shield enabled.' : 'Playback Shield paused.');
+  } catch {
+    setMessage('Could not change Playback Shield.');
+  } finally {
+    shieldToggle.disabled = false;
+  }
+});
+
+strictToggle.addEventListener('click', async () => {
+  if (!currentHost || allowedSites[currentHost] === true) return;
+  strictToggle.disabled = true;
+  try {
+    const next = { ...strictSites };
+    if (next[currentHost] === true) delete next[currentHost];
+    else next[currentHost] = true;
+    await chrome.storage.local.set({ [STRICT_KEY]: next });
+    strictSites = next;
+    setMessage('Site protection preference saved.');
+  } catch {
+    setMessage('Could not update site protection.');
+  } finally {
+    setSiteControl();
   }
 });
 
@@ -210,6 +264,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (STATE_KEY in changes) setProtection(changes[STATE_KEY].newValue);
     if (ALLOWED_SITES_KEY in changes) {
       allowedSites = changes[ALLOWED_SITES_KEY].newValue || {};
+      setSiteControl();
+    }
+    if (SHIELD_KEY in changes) setShieldControl(changes[SHIELD_KEY].newValue);
+    if (STRICT_KEY in changes) {
+      strictSites = changes[STRICT_KEY].newValue || {};
       setSiteControl();
     }
   }
