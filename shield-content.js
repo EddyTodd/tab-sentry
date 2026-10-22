@@ -12,6 +12,9 @@
   let siteAllowed = false;
   let recentSignals = 0;
   let signalWindow = 0;
+  let refreshVersion = 0;
+  let parentAllowed = false;
+  let parentStrict = false;
 
   function hostname() {
     return location.protocol === 'http:' || location.protocol === 'https:'
@@ -28,18 +31,36 @@
     const host = hostname();
     const wasEnabled = enabled && !siteAllowed;
     enabled = settings.enabled === true && settings.shieldEnabled !== false;
-    siteAllowed = !!host && settings.allowedSites?.[host] === true;
-    strict = !!host && settings.strictSites?.[host] === true;
+    siteAllowed = parentAllowed || (!!host && settings.allowedSites?.[host] === true);
+    strict = parentStrict || (!!host && settings.strictSites?.[host] === true);
     if (wasEnabled && (!enabled || siteAllowed)) restoreOverlays();
     informPage();
   }
 
-  chrome.storage.local.get(SETTINGS).then(configure).catch(() => {
-    configure({ enabled: false });
-  });
+  async function refreshConfiguration() {
+    const version = ++refreshVersion;
+    let settings;
+    try {
+      settings = await chrome.storage.local.get(SETTINGS);
+      if (window.top !== window) {
+        const tab = await chrome.runtime.sendMessage({ type: 'get-shield-tab-policy' });
+        if (version !== refreshVersion) return;
+        parentAllowed = tab?.allowed === true;
+        parentStrict = tab?.strict === true;
+      }
+    } catch {
+      if (version !== refreshVersion) return;
+      configure({ enabled: false });
+      return;
+    }
+    if (version === refreshVersion) configure(settings);
+  }
+
+  void refreshConfiguration();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !SETTINGS.some(key => key in changes)) return;
-    chrome.storage.local.get(SETTINGS).then(configure).catch(() => {});
+    if (area === 'local' && SETTINGS.some(key => key in changes)) {
+      void refreshConfiguration();
+    }
   });
 
   function report(type, hostnameValue = null) {
