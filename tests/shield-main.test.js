@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..');
 const policySource = fs.readFileSync(path.join(root, 'shield-policy.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(root, 'shield-main.js'), 'utf8');
 
-function createPage() {
+function createPage({ mediaUnderClick = false } = {}) {
   const listeners = new Map();
   let nativeCalls = 0;
   class Element {
@@ -43,7 +43,7 @@ function createPage() {
   const sandbox = {
     window, Element, CustomEvent, URL, Reflect, Date, navigator: { userActivation: { isActive: true } },
     location: { href: 'https://player.example/watch' },
-    document: { elementsFromPoint() { return []; } }
+    document: { elementsFromPoint() { return mediaUnderClick ? [new Element('VIDEO')] : []; } }
   };
   vm.createContext(sandbox);
   vm.runInContext(policySource, sandbox);
@@ -110,4 +110,13 @@ test('turning protection off restores original behavior without reloading', () =
   p.configure(false);
   assert.notEqual(p.window.open('https://wanted.example'), null);
   assert.equal(p.nativeCalls, 1);
+});
+
+
+test('deceptive new-tab anchor covering video is treated as playback click', () => {
+  const p = createPage({ mediaUnderClick: true });
+  p.configure(true);
+  p.click('A', { target: '_blank' });
+  assert.equal(p.window.open('https://ad.example'), null);
+  assert.equal(p.nativeCalls, 0);
 });
