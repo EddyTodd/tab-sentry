@@ -65,10 +65,11 @@ function enqueueStatistics(operation) {
 }
 
 function saveDiagnostic(event) {
+  const observedAt = Date.now();
   diagnosticQueue = diagnosticQueue.catch(() => {}).then(async () => {
     const saved = await chrome.storage.session.get(DIAGNOSTIC_EVENTS_KEY);
     const events = TabSentryDiagnostics.add(
-      saved[DIAGNOSTIC_EVENTS_KEY], event, Date.now()
+      saved[DIAGNOSTIC_EVENTS_KEY], event, observedAt
     );
     await chrome.storage.session.set({ [DIAGNOSTIC_EVENTS_KEY]: events });
   });
@@ -272,16 +273,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'diagnostic-event') {
     const type = message.event?.type;
-    if (enabled && !sender.tab?.incognito && Number.isInteger(sender.tab?.id) &&
-        ['video-click', 'video-playing', 'video-error'].includes(type)) {
-      saveDiagnostic({
-        type,
-        tabId: sender.tab.id,
-        frame: sender.frameId,
-        site: TabSentryPolicy.siteHost(sender.tab.url),
-        context: message.event?.context
-      });
-    }
+    if (sender.tab?.incognito || !Number.isInteger(sender.tab?.id) ||
+        !['video-click', 'video-playing', 'video-error'].includes(type)) return false;
+    const event = {
+      type,
+      tabId: sender.tab.id,
+      frame: sender.frameId,
+      site: TabSentryPolicy.siteHost(sender.tab.url),
+      context: message.event?.context
+    };
+    // A worker freshly woken by a video click has not loaded settings yet.
+    void configurationReady.then(() => {
+      if (enabled) saveDiagnostic(event);
+    }).catch(() => {});
     return false;
   }
 
