@@ -71,7 +71,7 @@ window.addEventListener('keydown', registerIntent, true);
 let lastMediaEvent = 0;
 
 function sendDiagnostic(type, context) {
-  if (!enabled) return;
+  if (!enabled || chrome.extension?.inIncognitoContext) return;
   chrome.runtime.sendMessage({
     type: 'diagnostic-event',
     event: { type, context }
