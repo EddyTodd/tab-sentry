@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const policySource = fs.readFileSync(path.join(root, 'tab-policy.js'), 'utf8');
+const diagnosticSource = fs.readFileSync(path.join(root, 'diagnostics.js'), 'utf8');
 const backgroundSource = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 
 function event() {
@@ -83,7 +84,10 @@ function harness({ enabled = true, allowedSites = {} } = {}) {
   };
 
   const context = vm.createContext({ chrome, URL, Date, Promise, setTimeout, clearTimeout });
-  context.importScripts = () => vm.runInContext(policySource, context);
+  context.importScripts = () => {
+    vm.runInContext(policySource, context);
+    vm.runInContext(diagnosticSource, context);
+  };
   vm.runInContext(backgroundSource, context);
 
   function created(tabId, url, sourceFrameId = 0, sourceTabId = 1) {
@@ -106,7 +110,20 @@ function harness({ enabled = true, allowedSites = {} } = {}) {
     assert.fail('Background task did not settle');
   }
 
-  return { chrome, created, register, tabData, removed, until, onUpdated, session };
+  function emitDiagnostic(type, options = {}) {
+    onMessage.fire({
+      type: 'diagnostic-event',
+      event: { type, context: options.context, url: 'https://hidden.example/private' }
+    }, {
+      tab: {
+        id: options.tabId ?? 1,
+        url: 'https://source.example/watch?secret=1',
+        incognito: options.incognito === true
+      },
+      frameId: options.frameId ?? 0
+    }, () => {});
+  }
+  return { chrome, created, register, tabData, removed, until, onUpdated, session, emitDiagnostic };
 }
 
 test('blocks an unmatched page-created tab and records hostname-only activity', async () => {
@@ -183,4 +200,39 @@ test('does not classify a navigation with no valid source tab', async () => {
   h.created(2, 'https://ads.example/popup', 0, -1);
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(h.tabData.has(2), true);
+});
+
+
+test('diagnostic popup attempt and block are linked to the source tab', async () => {
+  const h = harness();
+  h.created(2, 'https://ads.example/popup?token=do-not-log');
+  await h.until(() => (h.session.data.diagnosticEvents || []).some(
+    (entry) => entry.type === 'popup-blocked'
+  ));
+  const events = h.session.data.diagnosticEvents;
+  assert.deepEqual(events.map((entry) => entry.type), ['popup-attempt', 'popup-blocked']);
+  assert.ok(events.every((entry) => entry.tabId === 1));
+  assert.equal(events[1].target, 'ads.example');
+  assert.equal(JSON.stringify(events).includes('do-not-log'), false);
+});
+
+test('diagnostics ignore private windows and unapproved event kinds', async () => {
+  const h = harness();
+  h.emitDiagnostic('video-click', { incognito: true });
+  h.emitDiagnostic('password-entry');
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(h.session.data.diagnosticEvents, undefined);
+});
+
+test('records a video click and playback state without page text', async () => {
+  const h = harness();
+  h.emitDiagnostic('video-click', { frameId: 3, context: 'covering-element' });
+  h.emitDiagnostic('video-playing', { frameId: 3 });
+  await h.until(() => (h.session.data.diagnosticEvents || []).length === 2);
+  const events = h.session.data.diagnosticEvents;
+  assert.equal(events[0].frame, 3);
+  assert.equal(events[0].site, 'source.example');
+  assert.equal(events[0].context, 'covering-element');
+  assert.equal(JSON.stringify(events).includes('secret'), false);
+  assert.equal(JSON.stringify(events).includes('hidden.example'), false);
 });
