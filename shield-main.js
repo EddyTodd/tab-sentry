@@ -40,21 +40,23 @@
   function classify(event) {
     if (!enabled || !event.isTrusted || !(event.target instanceof Element)) return;
     const anchor = findAnchor(event.target);
-    if (anchor && ((anchor.getAttribute('target') || '').toLowerCase() === '_blank' ||
+    const control = event.target.closest('button,[role="button"],a');
+    const label = control
+      ? [control.getAttribute('aria-label') || '', control.getAttribute('title') || '',
+        typeof control.className === 'string' ? control.className : ''].join(' ')
+      : '';
+    const tag = event.target.tagName;
+    const video = tag === 'VIDEO' || !!event.target.closest('video') ||
+      isOverEmbeddedPlayer(event);
+    // A deceptive external link covering a player must not authorize its own
+    // popup merely because it declares target="_blank".
+    if (policy.isVideoGesture({ tag, label, playerArea: video })) {
+      gesture = 'video';
+    } else if (anchor && ((anchor.getAttribute('target') || '').toLowerCase() === '_blank' ||
       event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1)) {
       gesture = 'explicit';
     } else {
-      const control = event.target.closest('button,[role="button"],a');
-      const label = control
-        ? [control.getAttribute('aria-label') || '', control.getAttribute('title') || '',
-          typeof control.className === 'string' ? control.className : ''].join(' ')
-        : '';
-      const tag = event.target.tagName;
-      const video = tag === 'VIDEO' || !!event.target.closest('video') ||
-        isOverEmbeddedPlayer(event);
-      // Include play buttons and native video. Isolated overlay repair deals
-      // separately with transparent layers above embedded media.
-      gesture = policy.isVideoGesture({ tag, label, playerArea: video }) ? 'video' : 'other';
+      gesture = 'other';
     }
     gestureTime = Date.now();
   }
