@@ -1,9 +1,10 @@
-importScripts('tab-policy.js');
+importScripts('tab-policy.js', 'diagnostics.js');
 
 const STATE_KEY = 'enabled';
 const ALLOWED_SITES_KEY = 'allowedSites';
 const BLOCKED_COUNT_KEY = 'blockedCount';
 const RECENT_BLOCKED_KEY = 'recentBlocked';
+const DIAGNOSTIC_EVENTS_KEY = 'diagnosticEvents';
 const BLANK_TARGET_GRACE_MS = 1_200;
 const CLASSIFICATION_GRACE_MS = 90;
 
@@ -16,6 +17,7 @@ let allowedSites = {};
 let enabledChangeVersion = 0;
 let sitesChangeVersion = 0;
 let statisticsQueue = Promise.resolve();
+let diagnosticQueue = Promise.resolve();
 
 const configurationReady = chrome.storage.local
   .get([STATE_KEY, ALLOWED_SITES_KEY])
@@ -60,6 +62,30 @@ chrome.storage.session.get(BLOCKED_COUNT_KEY)
 function enqueueStatistics(operation) {
   statisticsQueue = statisticsQueue.catch(() => {}).then(operation);
   return statisticsQueue;
+}
+
+function saveDiagnostic(event) {
+  diagnosticQueue = diagnosticQueue.catch(() => {}).then(async () => {
+    const saved = await chrome.storage.session.get(DIAGNOSTIC_EVENTS_KEY);
+    const events = TabSentryDiagnostics.add(
+      saved[DIAGNOSTIC_EVENTS_KEY], event, Date.now()
+    );
+    await chrome.storage.session.set({ [DIAGNOSTIC_EVENTS_KEY]: events });
+  });
+  // Diagnostics never delay or determine popup blocking.
+  void diagnosticQueue.catch(() => {});
+}
+
+function describePopup(type, candidate, sourceTab, reason) {
+  if (sourceTab.incognito === true) return;
+  saveDiagnostic({
+    type,
+    tabId: candidate.sourceTabId,
+    frame: candidate.sourceFrameId,
+    site: TabSentryPolicy.siteHost(sourceTab.url),
+    target: TabSentryPolicy.siteHost(candidate.url),
+    reason
+  });
 }
 
 function recordBlocked(sourceUrl, targetUrl) {
@@ -108,6 +134,7 @@ async function blockTarget(candidate, sourceTab) {
     wasFocused = !!targetTab.active && !!focusedWindow.focused &&
       focusedWindow.id === targetTab.windowId;
     await chrome.tabs.remove(candidate.tabId);
+    describePopup('popup-blocked', candidate, sourceTab, 'unmatched-target');
   } catch {
     return;
   }
@@ -160,14 +187,25 @@ async function processTarget(tabId) {
       // An update may have replaced the URL during an asynchronous API call.
       if (pendingTargets.get(tabId) !== observed) continue;
 
-      if (!TabSentryPolicy.isProtectablePageUrl(sourceTab.url) ||
-          TabSentryPolicy.isSiteAllowed(sourceTab.url, allowedSites)) {
+      if (!TabSentryPolicy.isProtectablePageUrl(sourceTab.url)) {
+        forgetTarget(tabId);
+        return;
+      }
+
+      if (!observed.diagnosticLogged) {
+        observed.diagnosticLogged = true;
+        describePopup('popup-attempt', observed, sourceTab);
+      }
+
+      if (TabSentryPolicy.isSiteAllowed(sourceTab.url, allowedSites)) {
+        describePopup('popup-allowed', observed, sourceTab, 'site-exception');
         forgetTarget(tabId);
         return;
       }
 
       const intent = ledger.consume(observed.sourceTabId, observed.url, observed.sourceFrameId);
       if (intent.allowed) {
+        describePopup('popup-allowed', observed, sourceTab, 'matched-link');
         forgetTarget(tabId);
         return;
       }
@@ -231,6 +269,21 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
+
+  if (message.type === 'diagnostic-event') {
+    const type = message.event?.type;
+    if (enabled && !sender.tab?.incognito && Number.isInteger(sender.tab?.id) &&
+        ['video-click', 'video-playing', 'video-error'].includes(type)) {
+      saveDiagnostic({
+        type,
+        tabId: sender.tab.id,
+        frame: sender.frameId,
+        site: TabSentryPolicy.siteHost(sender.tab.url),
+        context: message.event?.context
+      });
+    }
+    return false;
+  }
 
   if (message.type === 'register-new-tab-intent') {
     const registered = ledger.register(
