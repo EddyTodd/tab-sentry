@@ -2,6 +2,7 @@ const STATE_KEY = 'enabled';
 const ALLOWED_SITES_KEY = 'allowedSites';
 const BLOCKED_COUNT_KEY = 'blockedCount';
 const RECENT_BLOCKED_KEY = 'recentBlocked';
+const DIAGNOSTIC_EVENTS_KEY = 'diagnosticEvents';
 
 const toggle = document.getElementById('toggle');
 const siteToggle = document.getElementById('site-toggle');
@@ -14,10 +15,17 @@ const activityList = document.getElementById('activity-list');
 const activityEmpty = document.getElementById('activity-empty');
 const clearButton = document.getElementById('clear-history');
 const message = document.getElementById('message');
+const diagnoseButton = document.getElementById('diagnose');
+const reportPanel = document.getElementById('diagnostic-panel');
+const reportField = document.getElementById('diagnostic-report');
+const copyButton = document.getElementById('copy-diagnostic');
 
 let enabled = false;
 let currentHost = null;
 let allowedSites = {};
+let currentTabId = null;
+let diagnosticEvents = [];
+let privateTab = false;
 
 function setMessage(value) {
   message.textContent = value;
@@ -93,13 +101,18 @@ async function initialize() {
   try {
     const [settings, stats, activeTabs] = await Promise.all([
       chrome.storage.local.get([STATE_KEY, ALLOWED_SITES_KEY]),
-      chrome.storage.session.get([BLOCKED_COUNT_KEY, RECENT_BLOCKED_KEY]),
+      chrome.storage.session.get([BLOCKED_COUNT_KEY, RECENT_BLOCKED_KEY, DIAGNOSTIC_EVENTS_KEY]),
       chrome.tabs.query({ active: true, currentWindow: true })
     ]);
 
     allowedSites = settings[ALLOWED_SITES_KEY] || {};
     setProtection(settings[STATE_KEY]);
     currentHost = getHost(activeTabs[0]?.url);
+    currentTabId = activeTabs[0]?.id ?? null;
+    privateTab = activeTabs[0]?.incognito === true;
+    diagnosticEvents = TabSentryDiagnostics.trim(stats[DIAGNOSTIC_EVENTS_KEY], Date.now());
+    diagnoseButton.disabled = !Number.isInteger(currentTabId) || privateTab;
+    if (privateTab) setMessage('Flight recorder is disabled in private windows.');
     siteHostLabel.textContent = currentHost || 'Not available';
     setSiteControl();
     updateStatistics(stats);
@@ -107,6 +120,7 @@ async function initialize() {
     setMessage('Could not load extension settings. Reopen this popup.');
     toggle.disabled = true;
     siteToggle.disabled = true;
+    diagnoseButton.disabled = true;
   }
 }
 
@@ -155,6 +169,42 @@ clearButton.addEventListener('click', async () => {
   }
 });
 
+async function copyDiagnosticReport() {
+  const text = reportField.value;
+  if (!text) return;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    setMessage('Report copied. Paste it into ChatGPT for analysis.');
+  } catch {
+    reportField.focus();
+    reportField.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch {}
+    setMessage(copied
+      ? 'Report copied. Paste it into ChatGPT.'
+      : 'Select and copy the report manually to share it.');
+  }
+}
+
+diagnoseButton.addEventListener('click', () => {
+  if (!Number.isInteger(currentTabId) || privateTab) return;
+  const report = TabSentryDiagnostics.createReport(
+    diagnosticEvents, currentTabId, Date.now(), currentHost
+  );
+  reportField.value = JSON.stringify(report, null, 2);
+  reportPanel.hidden = false;
+  if (!report.summary.recordedEvents) {
+    setMessage('No recent signals. Try again right after the problem occurs.');
+    return;
+  }
+  void copyDiagnosticReport();
+});
+
+copyButton.addEventListener('click', () => {
+  void copyDiagnosticReport();
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local') {
     if (STATE_KEY in changes) setProtection(changes[STATE_KEY].newValue);
@@ -162,6 +212,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
       allowedSites = changes[ALLOWED_SITES_KEY].newValue || {};
       setSiteControl();
     }
+  }
+  if (area === 'session' && DIAGNOSTIC_EVENTS_KEY in changes) {
+    diagnosticEvents = TabSentryDiagnostics.trim(
+      changes[DIAGNOSTIC_EVENTS_KEY].newValue, Date.now()
+    );
   }
   if (area === 'session' && (BLOCKED_COUNT_KEY in changes || RECENT_BLOCKED_KEY in changes)) {
     chrome.storage.session.get([BLOCKED_COUNT_KEY, RECENT_BLOCKED_KEY])
