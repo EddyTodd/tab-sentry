@@ -3,10 +3,11 @@
 ## Current priority: a specialized, accurate popup and unwanted-tab blocker
 
 1. **Reliability:** race-free tab classification, source-frame intent tracking, bounded state, accurate counters, conditional focus restoration.
-2. **User control and recovery:** polished toolbar UI, local per-site exceptions, activity transparency. Explore a safely recoverable blocked-tab queue that does not retain sensitive URLs by default.
-3. **Browser verification:** Chrome end-to-end scenarios for normal browsing, blank-target popups, nested frames, OAuth/payment flows, popup floods, and worker restarts; performance and false-positive benchmarks.
-4. **Advanced detection:** evaluate isolated main-world interception experiments only if they demonstrate measurable improvements and preserve compatibility. Keep browser-event protection as a fallback.
-5. **Distribution:** document minimal permissions, privacy, store assets, reproducible packaging, and manual release verification.
+2. **Diagnostics (first pass implemented):** a small privacy-limited, 60-second rolling recorder with one-click report generation. Validate capture fidelity and clipboard behavior in Chrome; no automatic fixes or site-specific instrumentation yet.
+3. **User control and recovery:** polished toolbar UI, local per-site exceptions, activity transparency. Explore a safely recoverable blocked-tab queue that does not retain sensitive URLs by default.
+4. **Browser verification:** Chrome end-to-end scenarios for normal browsing, blank-target popups, nested frames, OAuth/payment flows, popup floods, and worker restarts; performance and false-positive benchmarks.
+5. **Advanced detection:** evaluate isolated main-world interception experiments only if they demonstrate measurable improvements and preserve compatibility. Keep browser-event protection as a fallback.
+6. **Distribution:** document minimal permissions, privacy, store assets, reproducible packaging, and manual release verification.
 
 ## Future phase: full ad blocker (not yet implemented)
 

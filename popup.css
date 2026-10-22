@@ -113,3 +113,53 @@ footer { align-items: flex-start; gap: 12px; margin-top: 16px; color: #75889f; f
 footer #message { flex: 1; }
 .version { flex-shrink: 0; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+
+/* Minimal diagnostic drawer; nothing is uploaded automatically. */
+[hidden] { display: none !important; }
+.diagnose-card { padding: 14px; border-color: #30636a; }
+.diagnose-heading { display: flex; align-items: center; gap: 10px; }
+.diagnose-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #103a40;
+  color: #8de0e5;
+  border-radius: 10px;
+  height: 36px;
+  width: 36px;
+}
+.diagnose-button {
+  margin-top: 13px;
+  width: 100%;
+  border: 1px solid #60c6ce;
+  background: #57bdc5;
+  color: #081c26;
+  border-radius: 9px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+.diagnose-button:hover:not(:disabled) { background: #8cdae1; }
+.diagnose-button:disabled { opacity: .4; cursor: not-allowed; }
+.diagnose-note {
+  color: #91a6b8;
+  margin: 9px 0 0;
+  line-height: 1.5;
+  font-size: 10px;
+}
+.diagnostic-panel { margin-top: 12px; border-top: 1px solid #2e4551; padding-top: 11px; }
+.diagnostic-report {
+  display: block;
+  resize: vertical;
+  width: 100%;
+  min-height: 80px;
+  max-height: 230px;
+  margin: 7px 0 9px;
+  border: 1px solid #405166;
+  border-radius: 8px;
+  background: #0c131e;
+  color: #ddeaf6;
+  font: 10px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 9px;
+}
