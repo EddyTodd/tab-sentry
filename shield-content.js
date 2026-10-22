@@ -56,6 +56,7 @@
     if (version === refreshVersion) configure(settings);
   }
 
+  window.addEventListener('tab-sentry:shield-ready', informPage, true);
   void refreshConfiguration();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && SETTINGS.some(key => key in changes)) {
