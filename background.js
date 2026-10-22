@@ -271,6 +271,23 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
 
+  if (message.type === 'shield-diagnostic') {
+    const type = message.event?.type;
+    if (sender.tab?.incognito || !Number.isInteger(sender.tab?.id) ||
+        !['popup-prevented', 'overlay-neutralized'].includes(type)) return false;
+    const entry = {
+      type,
+      tabId: sender.tab.id,
+      frame: sender.frameId,
+      site: TabSentryPolicy.siteHost(sender.tab.url),
+      target: TabSentryDiagnostics.safeHost(message.event?.target)
+    };
+    void configurationReady.then(() => {
+      if (enabled) saveDiagnostic(entry);
+    }).catch(() => {});
+    return false;
+  }
+
   if (message.type === 'diagnostic-event') {
     const type = message.event?.type;
     if (sender.tab?.incognito || !Number.isInteger(sender.tab?.id) ||
