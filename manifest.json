@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Tab Sentry",
-  "version": "1.3.0",
-  "description": "Lightweight protection against unwanted page-created tabs and popup windows.",
+  "version": "1.4.0",
+  "description": "Blocks unwanted popups and repairs deceptive video-player overlays.",
   "minimum_chrome_version": "102",
   "action": {
     "default_popup": "popup.html",
@@ -26,10 +26,25 @@
         "<all_urls>"
       ],
       "js": [
-        "content.js"
+        "shield-policy.js",
+        "shield-main.js"
       ],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "shield-policy.js",
+        "content.js",
+        "shield-content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "ISOLATED"
     }
   ],
   "icons": {
