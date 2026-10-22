@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Tab Sentry",
-  "version": "1.1.1",
-  "description": "Blocks unwanted page-created tabs while preserving Chrome tabs and links you intentionally open.",
+  "version": "1.2.0",
+  "description": "Lightweight protection against unwanted page-created tabs and popup windows.",
   "minimum_chrome_version": "102",
   "action": {
     "default_popup": "popup.html",

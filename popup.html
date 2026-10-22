@@ -1,29 +1,84 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Tab Sentry</title>
-    <style>
-      body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 14px; color: #eaeaea; background: #1f1f1f; min-width: 280px; }
-      .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .label { font-weight: 650; }
-      .switch { position: relative; width: 48px; height: 26px; padding: 0; border: 0; background: #555; border-radius: 13px; cursor: pointer; transition: background .15s ease; }
-      .switch.on { background: #4caf50; }
-      .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; background: #fff; border-radius: 10px; transition: left .15s ease; }
-      .switch.on .knob { left: 25px; }
-      .hint { margin: 10px 0 0; color: #b9b9b9; font-size: 12px; }
-      .status { min-height: 18px; margin-top: 9px; color: #9ecbff; font-size: 12px; }
-    </style>
-  </head>
-  <body>
-    <div class="row">
-      <div class="label">Smart popup blocking</div>
-      <button id="toggle" class="switch" type="button" role="switch" aria-checked="false" aria-label="Toggle Tab Sentry">
-        <span class="knob"></span>
-      </button>
-    </div>
-    <div class="hint">Manual tabs and links you intentionally open stay allowed.</div>
-    <div id="status" class="status" aria-live="polite"></div>
-    <script src="popup.js"></script>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab Sentry</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div>
+          <h1>Tab Sentry</h1>
+          <p class="subtitle">Popup protection</p>
+        </div>
+      </div>
+      <span id="protection-status" class="status-pill off"><span class="status-dot"></span><span id="protection-label">Off</span></span>
+    </header>
+
+    <section class="card protection" aria-labelledby="protection-title">
+      <div class="setting-row">
+        <div>
+          <h2 id="protection-title">Protection</h2>
+          <p class="muted">Stop unwanted page-created tabs.</p>
+        </div>
+        <button id="toggle" type="button" class="switch" role="switch" aria-checked="false" aria-label="Enable popup protection">
+          <span class="switch-thumb"></span>
+        </button>
+      </div>
+    </section>
+
+    <section class="stats card" aria-labelledby="stats-title">
+      <div class="stats-top">
+        <span id="stats-title" class="eyebrow">Blocked this session</span>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg>
+      </div>
+      <div id="blocked-count" class="stat-number" aria-live="polite">0</div>
+      <p class="muted">Count resets when the browser session ends.</p>
+    </section>
+
+    <section class="section" aria-labelledby="site-title">
+      <div class="section-heading">
+        <h2 id="site-title">Current site</h2>
+        <span id="site-host" class="site-host">Checking…</span>
+      </div>
+      <div class="card site-setting">
+        <div class="setting-row">
+          <div>
+            <p class="setting-title">Allow popups on this site</p>
+            <p id="site-description" class="muted">Make an exception for sites you trust.</p>
+          </div>
+          <button id="site-toggle" type="button" class="switch" role="switch" aria-checked="false" aria-label="Allow popups from current site" disabled>
+            <span class="switch-thumb"></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="activity-title">
+      <div class="section-heading">
+        <h2 id="activity-title">Recent activity</h2>
+        <button id="clear-history" class="text-button" type="button" aria-label="Reset session count and recent activity">Reset</button>
+      </div>
+      <div class="card activity-card">
+        <p id="activity-empty" class="activity-empty muted">No unwanted tabs blocked yet.</p>
+        <ul id="activity-list" class="activity-list" aria-label="Recent blocked tabs"></ul>
+      </div>
+    </section>
+
+    <footer>
+      <span id="message" role="status" aria-live="polite">Your site exceptions stay on this device.</span>
+      <span class="version">1.2.0</span>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
 </html>

@@ -1,20 +1,31 @@
 importScripts('tab-policy.js');
 
 const STATE_KEY = 'enabled';
+const ALLOWED_SITES_KEY = 'allowedSites';
 const BLOCKED_COUNT_KEY = 'blockedCount';
-const CLASSIFICATION_DELAY_MS = 100;
-const FALLBACK_DELAY_MS = 750;
+const RECENT_BLOCKED_KEY = 'recentBlocked';
+const BLANK_TARGET_GRACE_MS = 1_200;
+const CLASSIFICATION_GRACE_MS = 90;
 
 const ledger = TabSentryPolicy.createIntentLedger();
 const pendingTargets = new Map();
-const classifiedTabs = new Set();
-const classifyingTabs = new Set();
+const processingTabs = new Set();
 
 let enabled = false;
-let stateChangeVersion = 0;
-const stateReady = chrome.storage.local.get(STATE_KEY).then((stored) => {
-  if (stateChangeVersion === 0) enabled = !!stored[STATE_KEY];
-});
+let allowedSites = {};
+let enabledChangeVersion = 0;
+let sitesChangeVersion = 0;
+let statisticsQueue = Promise.resolve();
+
+const configurationReady = chrome.storage.local
+  .get([STATE_KEY, ALLOWED_SITES_KEY])
+  .then((stored) => {
+    if (enabledChangeVersion === 0) enabled = stored[STATE_KEY] === true;
+    if (sitesChangeVersion === 0) allowedSites = stored[ALLOWED_SITES_KEY] || {};
+  }).catch(() => {
+    enabled = false;
+    allowedSites = {};
+  });
 
 chrome.runtime.onInstalled.addListener(async () => {
   const stored = await chrome.storage.local.get(STATE_KEY);
@@ -23,142 +34,198 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && STATE_KEY in changes) {
-    stateChangeVersion += 1;
-    enabled = !!changes[STATE_KEY].newValue;
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (STATE_KEY in changes) {
+    enabledChangeVersion++;
+    enabled = changes[STATE_KEY].newValue === true;
+  }
+  if (ALLOWED_SITES_KEY in changes) {
+    sitesChangeVersion++;
+    allowedSites = changes[ALLOWED_SITES_KEY].newValue || {};
   }
 });
 
-function finishClassification(tabId) {
+function updateBadge(count) {
+  return Promise.all([
+    chrome.action.setBadgeBackgroundColor({ color: '#ef4444' }),
+    chrome.action.setBadgeText({ text: count ? (count > 99 ? '99+' : String(count)) : '' })
+  ]);
+}
+
+chrome.storage.session.get(BLOCKED_COUNT_KEY)
+  .then((stored) => updateBadge(Number(stored[BLOCKED_COUNT_KEY] || 0)))
+  .catch(() => {});
+
+function enqueueStatistics(operation) {
+  statisticsQueue = statisticsQueue.catch(() => {}).then(operation);
+  return statisticsQueue;
+}
+
+function recordBlocked(sourceUrl, targetUrl) {
+  return enqueueStatistics(async () => {
+    const stored = await chrome.storage.session.get([BLOCKED_COUNT_KEY, RECENT_BLOCKED_KEY]);
+    const count = Number(stored[BLOCKED_COUNT_KEY] || 0) + 1;
+    const recent = Array.isArray(stored[RECENT_BLOCKED_KEY])
+      ? stored[RECENT_BLOCKED_KEY] : [];
+
+    recent.unshift({
+      source: TabSentryPolicy.siteHost(sourceUrl) || 'Unknown source',
+      target: TabSentryPolicy.siteHost(targetUrl) || 'Blank or hidden destination',
+      time: Date.now()
+    });
+
+    await chrome.storage.session.set({
+      [BLOCKED_COUNT_KEY]: count,
+      [RECENT_BLOCKED_KEY]: recent.slice(0, 12)
+    });
+    await updateBadge(count);
+  });
+}
+
+function resetStatistics() {
+  return enqueueStatistics(async () => {
+    await chrome.storage.session.set({
+      [BLOCKED_COUNT_KEY]: 0,
+      [RECENT_BLOCKED_KEY]: []
+    });
+    await updateBadge(0);
+  });
+}
+
+function forgetTarget(tabId) {
+  const pending = pendingTargets.get(tabId);
+  if (pending?.timer) clearTimeout(pending.timer);
   pendingTargets.delete(tabId);
-  classifiedTabs.add(tabId);
-  setTimeout(() => classifiedTabs.delete(tabId), 10_000);
 }
 
-async function refocusSource(sourceTabId) {
-  if (!Number.isInteger(sourceTabId)) return;
-
+async function blockTarget(candidate, sourceTab) {
+  let targetTab;
+  let wasFocused = false;
   try {
-    const sourceTab = await chrome.tabs.update(sourceTabId, { active: true });
-    if (Number.isInteger(sourceTab.windowId)) {
-      await chrome.windows.update(sourceTab.windowId, { focused: true });
-    }
+    targetTab = await chrome.tabs.get(candidate.tabId);
+    const focusedWindow = await chrome.windows.getLastFocused();
+    wasFocused = !!targetTab.active && !!focusedWindow.focused &&
+      focusedWindow.id === targetTab.windowId;
+    await chrome.tabs.remove(candidate.tabId);
   } catch {
-    // The source may have closed while the popup was being classified.
-  }
-}
-
-async function recordBlocked() {
-  const previous = await chrome.storage.session.get(BLOCKED_COUNT_KEY);
-  const blockedCount = Number(previous[BLOCKED_COUNT_KEY] || 0) + 1;
-
-  await chrome.storage.session.set({ [BLOCKED_COUNT_KEY]: blockedCount });
-  await chrome.action.setBadgeBackgroundColor({ color: '#b3261e' });
-  await chrome.action.setBadgeText({ text: String(Math.min(blockedCount, 99)) });
-}
-
-async function blockTarget(tabId, sourceTabId) {
-  finishClassification(tabId);
-
-  try {
-    await recordBlocked();
-  } catch {
-    // Storage or badge failures must never let the popup survive.
+    return;
   }
 
-  try {
-    await chrome.tabs.remove(tabId);
-  } catch {
-    // It may already have been closed by Chrome or another blocker.
-  }
-
-  await refocusSource(sourceTabId);
-}
-
-async function classifyTarget(tabId, sourceTabId, url, blockTransient = false) {
-  if (classifiedTabs.has(tabId) || classifyingTabs.has(tabId)) return;
-  classifyingTabs.add(tabId);
-
-  try {
-    await stateReady;
-    if (classifiedTabs.has(tabId)) return;
-
-    if (!enabled) {
-      finishClassification(tabId);
-      return;
-    }
-
-    if (!Number.isInteger(sourceTabId)) {
-      finishClassification(tabId);
-      return;
-    }
-
+  if (wasFocused) {
     try {
-      const sourceTab = await chrome.tabs.get(sourceTabId);
-      if (!TabSentryPolicy.isProtectablePageUrl(sourceTab.url)) {
-        finishClassification(tabId);
-        return;
+      const source = await chrome.tabs.get(candidate.sourceTabId);
+      const focusedWindow = await chrome.windows.getLastFocused();
+      // Do not steal focus if the user has moved to another window.
+      if (focusedWindow.id === targetTab.windowId ||
+          focusedWindow.id === source.windowId) {
+        await chrome.tabs.update(candidate.sourceTabId, { active: true });
+        if (source.windowId !== targetTab.windowId) {
+          await chrome.windows.update(source.windowId, { focused: true });
+        }
       }
     } catch {
-      finishClassification(tabId);
-      return;
+      // Source page may have closed.
     }
+  }
 
-    if (TabSentryPolicy.isTransientUrl(url) && !blockTransient) {
-      pendingTargets.set(tabId, { sourceTabId, url });
-      return;
-    }
-
-    const decision = ledger.consume(sourceTabId, url);
-    if (decision.allowed) {
-      finishClassification(tabId);
-      return;
-    }
-
-    await blockTarget(tabId, sourceTabId);
-  } finally {
-    classifyingTabs.delete(tabId);
+  try {
+    await recordBlocked(sourceTab.url, candidate.url);
+  } catch {
+    // Badge or storage errors should never undo successful blocking.
   }
 }
 
-function scheduleClassification(tabId, sourceTabId, url, delayMs, blockTransient = false) {
-  if (classifiedTabs.has(tabId)) return;
-  pendingTargets.set(tabId, { sourceTabId, url });
-  setTimeout(() => {
-    const pending = pendingTargets.get(tabId);
-    if (!pending || classifiedTabs.has(tabId)) return;
-    return classifyTarget(tabId, pending.sourceTabId, pending.url, blockTransient);
-  }, delayMs);
+async function processTarget(tabId) {
+  if (processingTabs.has(tabId)) return;
+  processingTabs.add(tabId);
+  let observed = null;
+
+  try {
+    await configurationReady;
+    while ((observed = pendingTargets.get(tabId))) {
+      if (!observed.expired) return;
+      if (!enabled) {
+        forgetTarget(tabId);
+        return;
+      }
+
+      let sourceTab;
+      try {
+        sourceTab = await chrome.tabs.get(observed.sourceTabId);
+      } catch {
+        forgetTarget(tabId);
+        return;
+      }
+      // An update may have replaced the URL during an asynchronous API call.
+      if (pendingTargets.get(tabId) !== observed) continue;
+
+      if (!TabSentryPolicy.isProtectablePageUrl(sourceTab.url) ||
+          TabSentryPolicy.isSiteAllowed(sourceTab.url, allowedSites)) {
+        forgetTarget(tabId);
+        return;
+      }
+
+      const intent = ledger.consume(observed.sourceTabId, observed.url, observed.sourceFrameId);
+      if (intent.allowed) {
+        forgetTarget(tabId);
+        return;
+      }
+
+      if (pendingTargets.get(tabId) !== observed) continue;
+      // Reserve this target before any asynchronous operations inside blockTarget.
+      forgetTarget(tabId);
+      await blockTarget(observed, sourceTab);
+      return;
+    }
+  } finally {
+    processingTabs.delete(tabId);
+    const latest = pendingTargets.get(tabId);
+    if (latest && latest !== observed && latest.expired) {
+      void processTarget(tabId);
+    }
+  }
+}
+
+function watchTarget(tabId, sourceTabId, sourceFrameId, url) {
+  forgetTarget(tabId);
+  const candidate = {
+    tabId,
+    sourceTabId,
+    sourceFrameId: Number.isInteger(sourceFrameId) ? sourceFrameId : 0,
+    url,
+    expired: false,
+    timer: null
+  };
+  pendingTargets.set(tabId, candidate);
+
+  if (TabSentryPolicy.isTransientUrl(url)) {
+    candidate.timer = setTimeout(() => {
+      if (pendingTargets.get(tabId) !== candidate) return;
+      candidate.expired = true;
+      void processTarget(tabId);
+    }, BLANK_TARGET_GRACE_MS);
+  } else {
+    candidate.timer = setTimeout(() => {
+      if (pendingTargets.get(tabId) !== candidate) return;
+      candidate.expired = true;
+      void processTarget(tabId);
+    }, CLASSIFICATION_GRACE_MS);
+  }
 }
 
 chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
-  scheduleClassification(
-    details.tabId,
-    details.sourceTabId,
-    details.url,
-    CLASSIFICATION_DELAY_MS
-  );
-
-  scheduleClassification(
-    details.tabId,
-    details.sourceTabId,
-    details.url,
-    FALLBACK_DELAY_MS,
-    true
-  );
+  watchTarget(details.tabId, details.sourceTabId, details.sourceFrameId, details.url);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   const pending = pendingTargets.get(tabId);
   if (!pending || !changeInfo.url || TabSentryPolicy.isTransientUrl(changeInfo.url)) return;
-  scheduleClassification(tabId, pending.sourceTabId, changeInfo.url, CLASSIFICATION_DELAY_MS);
+  watchTarget(tabId, pending.sourceTabId, pending.sourceFrameId, changeInfo.url);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  pendingTargets.delete(tabId);
-  classifiedTabs.delete(tabId);
-  classifyingTabs.delete(tabId);
+  forgetTarget(tabId);
   ledger.drop(tabId);
 });
 
@@ -166,16 +233,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
 
   if (message.type === 'register-new-tab-intent') {
-    const registered = ledger.register(sender.tab?.id, message.url);
+    const registered = ledger.register(
+      sender.tab?.id,
+      message.url,
+      sender.frameId,
+      message.contextMenu === true ? 12_000 : 5_000
+    );
     sendResponse({ registered });
     return false;
   }
 
-  if (message.type === 'clear-blocked-count') {
-    chrome.storage.session.set({ [BLOCKED_COUNT_KEY]: 0 });
-    chrome.action.setBadgeText({ text: '' });
-    sendResponse({ cleared: true });
-    return false;
+  if (message.type === 'reset-stats') {
+    resetStatistics()
+      .then(() => sendResponse({ reset: true }))
+      .catch(() => sendResponse({ reset: false }));
+    return true;
   }
 
   return false;

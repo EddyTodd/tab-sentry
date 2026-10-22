@@ -1,17 +1,10 @@
 (function exposeTabSentryPolicy(root, factory) {
   const api = factory();
-
-  if (typeof module === 'object' && module.exports) {
-    module.exports = api;
-  }
-
-  if (root) {
-    root.TabSentryPolicy = api;
-  }
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.TabSentryPolicy = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function buildPolicy() {
   function normalizeUrl(value, base) {
     if (typeof value !== 'string' || !value.trim()) return null;
-
     try {
       return new URL(value, base).href;
     } catch {
@@ -24,68 +17,88 @@
   }
 
   function isProtectablePageUrl(value) {
-    const normalizedUrl = normalizeUrl(value);
-    if (!normalizedUrl) return false;
-
-    const protocol = new URL(normalizedUrl).protocol;
+    const url = normalizeUrl(value);
+    if (!url) return false;
+    const protocol = new URL(url).protocol;
     return protocol === 'http:' || protocol === 'https:';
   }
 
+  function siteHost(value) {
+    const url = normalizeUrl(value);
+    return isProtectablePageUrl(url) ? new URL(url).hostname.toLowerCase() : null;
+  }
+
+  function isSiteAllowed(value, allowedSites) {
+    const host = siteHost(value);
+    return !!host && !!allowedSites &&
+      Object.prototype.hasOwnProperty.call(allowedSites, host) &&
+      allowedSites[host] === true;
+  }
+
   function createIntentLedger(options = {}) {
-    const intentTtlMs = options.intentTtlMs ?? 30_000;
+    const intentTtlMs = options.intentTtlMs ?? 5_000;
     const now = options.now ?? Date.now;
-    const intentsByTab = new Map();
+    const intentsByFrame = new Map();
 
-    function clean(tabId) {
-      const currentTime = now();
-      const liveIntents = (intentsByTab.get(tabId) || [])
-        .filter((intent) => intent.expiresAt > currentTime);
-
-      if (liveIntents.length) intentsByTab.set(tabId, liveIntents);
-      else intentsByTab.delete(tabId);
+    function key(tabId, frameId) {
+      return tabId + ':' + frameId;
     }
 
-    function register(tabId, url) {
-      const normalizedUrl = normalizeUrl(url);
-      if (!Number.isInteger(tabId) || !normalizedUrl) return false;
+    function clean(frameKey) {
+      const live = (intentsByFrame.get(frameKey) || [])
+        .filter((intent) => intent.expiresAt > now());
+      if (live.length) intentsByFrame.set(frameKey, live);
+      else intentsByFrame.delete(frameKey);
+    }
 
-      clean(tabId);
-      const intents = intentsByTab.get(tabId) || [];
-      const withoutDuplicate = intents.filter((intent) => intent.url !== normalizedUrl);
-      withoutDuplicate.push({
-        url: normalizedUrl,
-        expiresAt: now() + intentTtlMs
-      });
-      intentsByTab.set(tabId, withoutDuplicate.slice(-5));
+    function register(tabId, url, frameId = 0, ttlMs = intentTtlMs) {
+      const normalizedUrl = normalizeUrl(url);
+      if (!Number.isInteger(tabId) || !Number.isInteger(frameId) ||
+          !isProtectablePageUrl(normalizedUrl) ||
+          !Number.isFinite(ttlMs) || ttlMs <= 0) return false;
+
+      const frameKey = key(tabId, frameId);
+      clean(frameKey);
+      const intents = (intentsByFrame.get(frameKey) || [])
+        .filter((intent) => intent.url !== normalizedUrl);
+      intents.push({ url: normalizedUrl, expiresAt: now() + Math.min(ttlMs, 12_000) });
+      intentsByFrame.set(frameKey, intents.slice(-5));
       return true;
     }
 
-    function consume(tabId, url) {
+    function consume(tabId, url, frameId = 0) {
       const normalizedUrl = normalizeUrl(url);
-      if (!Number.isInteger(tabId) || !normalizedUrl) {
+      if (!Number.isInteger(tabId) || !Number.isInteger(frameId) || !normalizedUrl) {
         return { allowed: false, reason: null };
       }
 
-      clean(tabId);
-      const intents = intentsByTab.get(tabId) || [];
-      const matchingIndex = intents.findIndex((intent) => intent.url === normalizedUrl);
+      const frameKey = key(tabId, frameId);
+      clean(frameKey);
+      const intents = intentsByFrame.get(frameKey) || [];
+      const index = intents.findIndex((intent) => intent.url === normalizedUrl);
+      if (index < 0) return { allowed: false, reason: null };
 
-      if (matchingIndex >= 0) {
-        intents.splice(matchingIndex, 1);
-        if (intents.length) intentsByTab.set(tabId, intents);
-        else intentsByTab.delete(tabId);
-        return { allowed: true, reason: 'matched-link' };
-      }
-
-      return { allowed: false, reason: null };
+      intents.splice(index, 1);
+      if (intents.length) intentsByFrame.set(frameKey, intents);
+      else intentsByFrame.delete(frameKey);
+      return { allowed: true, reason: 'matched-link' };
     }
 
     function drop(tabId) {
-      intentsByTab.delete(tabId);
+      for (const frameKey of intentsByFrame.keys()) {
+        if (frameKey.startsWith(tabId + ':')) intentsByFrame.delete(frameKey);
+      }
     }
 
     return { register, consume, drop };
   }
 
-  return { normalizeUrl, isTransientUrl, isProtectablePageUrl, createIntentLedger };
+  return {
+    normalizeUrl,
+    isTransientUrl,
+    isProtectablePageUrl,
+    siteHost,
+    isSiteAllowed,
+    createIntentLedger
+  };
 });
