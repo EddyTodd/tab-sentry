@@ -21,8 +21,22 @@
     return element instanceof Element ? element.closest('a[href]') : null;
   }
 
+  function isOverEmbeddedPlayer(event) {
+    if (!enabled || !Number.isFinite(event.clientX) ||
+        !Number.isFinite(event.clientY) ||
+        typeof document.elementsFromPoint !== 'function') return false;
+    const stack = document.elementsFromPoint(event.clientX, event.clientY).slice(0, 16);
+    return stack.some((el) => {
+      if (el.tagName === 'VIDEO') return true;
+      if (el.tagName !== 'IFRAME') return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width >= 160 && rect.height >= 90 &&
+        (el.hasAttribute('allowfullscreen') || /autoplay/.test(el.getAttribute('allow') || ''));
+    });
+  }
+
   function classify(event) {
-    if (!event.isTrusted || !(event.target instanceof Element)) return;
+    if (!enabled || !event.isTrusted || !(event.target instanceof Element)) return;
     const anchor = findAnchor(event.target);
     if (anchor && ((anchor.getAttribute('target') || '').toLowerCase() === '_blank' ||
       event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1)) {
@@ -34,7 +48,8 @@
           typeof control.className === 'string' ? control.className : ''].join(' ')
         : '';
       const tag = event.target.tagName;
-      const video = tag === 'VIDEO' || !!event.target.closest('video');
+      const video = tag === 'VIDEO' || !!event.target.closest('video') ||
+        isOverEmbeddedPlayer(event);
       // Include play buttons and native video. Isolated overlay repair deals
       // separately with transparent layers above embedded media.
       gesture = policy.isVideoGesture({ tag, label, playerArea: video }) ? 'video' : 'other';
