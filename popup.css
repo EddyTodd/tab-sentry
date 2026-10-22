@@ -163,3 +163,13 @@ footer #message { flex: 1; }
   font: 10px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
   padding: 9px;
 }
+
+/* Playback controls stay intentionally lightweight and keyboard accessible. */
+.shield-panel { margin-top: 11px; padding: 15px; border-color: #285961; }
+.strict-setting {
+  margin-top: 8px;
+  padding: 13px 14px;
+  background: #151e2a;
+  border: 1px solid #2a3749;
+  border-radius: 13px;
+}
