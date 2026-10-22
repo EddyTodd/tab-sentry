@@ -64,3 +64,73 @@ window.addEventListener('auxclick', registerIntent, true);
 window.addEventListener('click', registerIntent, true);
 window.addEventListener('contextmenu', registerIntent, true);
 window.addEventListener('keydown', registerIntent, true);
+
+
+// Lightweight flight recorder: observe only media-related interactions,
+// never page text, element selectors, coordinates, or video content.
+let lastMediaEvent = 0;
+
+function sendDiagnostic(type, context) {
+  if (!enabled) return;
+  chrome.runtime.sendMessage({
+    type: 'diagnostic-event',
+    event: { type, context }
+  }).catch(() => {});
+}
+
+function withinRect(rect, x, y) {
+  return rect.width >= 160 && rect.height >= 90 &&
+    x >= rect.left && x <= rect.right &&
+    y >= rect.top && y <= rect.bottom;
+}
+
+function classifyMediaClick(event) {
+  if (!event.isTrusted || event.button !== 0 ||
+      !(event.target instanceof Element)) return null;
+
+  const target = event.target;
+  if (target.closest('input,textarea,select,[contenteditable]')) return null;
+  if (target instanceof HTMLVideoElement || target.closest('video')) return 'video';
+
+  const control = target.closest('button,[role="button"],a');
+  if (control) {
+    const label = (control.getAttribute('aria-label') || '') + ' ' +
+      (control.getAttribute('title') || '');
+    const classes = typeof control.className === 'string' ? control.className : '';
+    if (/(^|[^a-z])(play|watch|start-video)([^a-z]|$)/i.test(label + ' ' + classes)) {
+      return 'play-control';
+    }
+  }
+
+  // Identify potential overlay clicks by geometry without collecting DOM content.
+  // An iframe may itself contain a legitimate video; this is only a diagnostic hint.
+  const candidates = document.querySelectorAll('video,iframe');
+  for (let i = 0; i < Math.min(candidates.length, 12); i++) {
+    const element = candidates[i];
+    if (!withinRect(element.getBoundingClientRect(), event.clientX, event.clientY)) continue;
+    return element.tagName === 'IFRAME' && element === target
+      ? 'embedded-frame'
+      : 'covering-element';
+  }
+  return null;
+}
+
+window.addEventListener('pointerdown', (event) => {
+  if (!enabled || Date.now() - lastMediaEvent < 250) return;
+  const context = classifyMediaClick(event);
+  if (!context) return;
+  lastMediaEvent = Date.now();
+  sendDiagnostic('video-click', context);
+}, true);
+
+document.addEventListener('playing', (event) => {
+  if (enabled && event.target instanceof HTMLVideoElement) {
+    sendDiagnostic('video-playing');
+  }
+}, true);
+
+document.addEventListener('error', (event) => {
+  if (enabled && event.target instanceof HTMLVideoElement) {
+    sendDiagnostic('video-error');
+  }
+}, true);
