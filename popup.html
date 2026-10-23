@@ -36,13 +36,25 @@
       </div>
     </section>
 
+    <section class="card shield-panel" aria-labelledby="shield-title">
+      <div class="setting-row">
+        <div>
+          <h2 id="shield-title">Playback Shield</h2>
+          <p id="shield-description" class="muted">Stop popup scripts and deceptive video overlays.</p>
+        </div>
+        <button id="shield-toggle" type="button" class="switch" role="switch" aria-checked="true" aria-label="Enable Playback Shield">
+          <span class="switch-thumb"></span>
+        </button>
+      </div>
+    </section>
+
     <section class="stats card" aria-labelledby="stats-title">
       <div class="stats-top">
-        <span id="stats-title" class="eyebrow">Blocked this session</span>
+        <span id="stats-title" class="eyebrow">Unwanted tabs closed</span>
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg>
       </div>
       <div id="blocked-count" class="stat-number" aria-live="polite">0</div>
-      <p class="muted">Count resets when the browser session ends.</p>
+      <p class="muted">Popups prevented before opening appear in diagnostics.</p>
     </section>
 
     <section class="section" aria-labelledby="site-title">
@@ -57,6 +69,17 @@
             <p id="site-description" class="muted">Make an exception for sites you trust.</p>
           </div>
           <button id="site-toggle" type="button" class="switch" role="switch" aria-checked="false" aria-label="Allow popups from current site" disabled>
+            <span class="switch-thumb"></span>
+          </button>
+        </div>
+      </div>
+      <div class="strict-setting">
+        <div class="setting-row">
+          <div>
+            <p class="setting-title">Stronger popup blocking</p>
+            <p class="muted">For this site. May interrupt sign-in popups.</p>
+          </div>
+          <button id="strict-toggle" type="button" class="switch" role="switch" aria-checked="false" aria-label="Strong popup blocking on current site" disabled>
             <span class="switch-thumb"></span>
           </button>
         </div>
@@ -99,7 +122,7 @@
 
     <footer>
       <span id="message" role="status" aria-live="polite">Your site exceptions stay on this device.</span>
-      <span class="version">1.3.0</span>
+      <span class="version">1.4.0</span>
     </footer>
   </main>
   <script src="diagnostics.js"></script>

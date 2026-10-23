@@ -37,7 +37,7 @@ function storageArea(name, initial, changed) {
   };
 }
 
-function harness({ enabled = true, allowedSites = {} } = {}) {
+function harness({ enabled = true, allowedSites = {}, strictSites = {} } = {}) {
   const onChanged = event();
   const onCreatedNavigationTarget = event();
   const onUpdated = event();
@@ -47,7 +47,7 @@ function harness({ enabled = true, allowedSites = {} } = {}) {
     [1, { id: 1, url: 'https://source.example/watch', windowId: 1, active: false }]
   ]);
   const removed = [];
-  const local = storageArea('local', { enabled, allowedSites }, onChanged);
+  const local = storageArea('local', { enabled, allowedSites, strictSites }, onChanged);
   const session = storageArea('session', {}, onChanged);
 
   const chrome = {
@@ -123,7 +123,7 @@ function harness({ enabled = true, allowedSites = {} } = {}) {
       frameId: options.frameId ?? 0
     }, () => {});
   }
-  return { chrome, created, register, tabData, removed, until, onUpdated, session, emitDiagnostic };
+  return { chrome, created, register, tabData, removed, until, onUpdated, session, emitDiagnostic, onMessage };
 }
 
 test('blocks an unmatched page-created tab and records hostname-only activity', async () => {
@@ -235,4 +235,54 @@ test('records a video click and playback state without page text', async () => {
   assert.equal(events[0].context, 'covering-element');
   assert.equal(JSON.stringify(events).includes('secret'), false);
   assert.equal(JSON.stringify(events).includes('hidden.example'), false);
+});
+
+
+test('shield diagnostics record prevention and overlay repair without paths', async () => {
+  const h = harness();
+  function signal(type, target) {
+    h.onMessage.fire({
+      type: 'shield-diagnostic', event: { type, target, pageContent: 'secret' }
+    }, {
+      tab: { id: 1, url: 'https://source.example/watch?secret=1', incognito: false },
+      frameId: 2
+    }, () => {});
+  }
+  signal('popup-prevented', 'ads.example');
+  signal('overlay-neutralized', null);
+  await h.until(() => (h.session.data.diagnosticEvents || []).length === 2);
+  const entries = h.session.data.diagnosticEvents;
+  assert.deepEqual(entries.map(entry => entry.type), ['popup-prevented', 'overlay-neutralized']);
+  assert.equal(entries[0].target, 'ads.example');
+  assert.equal(JSON.stringify(entries).includes('secret'), false);
+});
+
+test('frame policy respects the top tab allow and strict preferences', async () => {
+  const h = harness({
+    allowedSites: { 'source.example': true },
+    strictSites: { 'source.example': true }
+  });
+  const result = await new Promise(resolve => {
+    h.onMessage.fire(
+      { type: 'get-shield-tab-policy' },
+      { tab: { id: 1, url: 'https://source.example/watch' }, frameId: 7 },
+      resolve
+    );
+  });
+  assert.deepEqual(result, { allowed: true, strict: true });
+});
+
+test('invalid frame and diagnostic events are rejected', async () => {
+  const h = harness();
+  const result = await new Promise(resolve => {
+    h.onMessage.fire({ type: 'get-shield-tab-policy' }, {}, resolve);
+  });
+  assert.deepEqual(result, { allowed: false, strict: false });
+  h.onMessage.fire(
+    { type: 'shield-diagnostic', event: { type: 'password-entry', target: 'bad.example' } },
+    { tab: { id: 1, url: 'https://source.example/' }, frameId: 0 },
+    () => {}
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(h.session.data.diagnosticEvents, undefined);
 });

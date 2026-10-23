@@ -80,3 +80,17 @@ test('site and target values cannot carry arbitrary strings into reports', () =>
   assert.equal(JSON.stringify(report).includes('sneaky'), false);
   assert.equal(report.timeline[0].reason, undefined);
 });
+
+
+test('reports preemptive suppression separately from post-creation blocking', () => {
+  let events = [];
+  events = D.add(events, { type: 'video-click', tabId: 1, context: 'play-control' }, NOW);
+  events = D.add(events, { type: 'popup-prevented', tabId: 1, target: 'ads.example' }, NOW + 50);
+  events = D.add(events, { type: 'overlay-neutralized', tabId: 1 }, NOW + 75);
+  const report = D.createReport(events, 1, NOW + 500, 'video.example');
+  assert.equal(report.summary.preventedPopups, 1);
+  assert.equal(report.summary.repairedOverlays, 1);
+  assert.equal(report.summary.blockedPopups, 0);
+  assert.equal(report.summary.possibleClickHijacks, 1);
+  assert.equal(report.timeline[1].target, 'ads.example');
+});

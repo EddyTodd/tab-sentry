@@ -271,6 +271,42 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
 
+  if (message.type === 'get-shield-tab-policy') {
+    if (!Number.isInteger(sender.tab?.id)) {
+      sendResponse({ allowed: false, strict: false });
+      return false;
+    }
+    void Promise.all([
+      configurationReady,
+      chrome.storage.local.get('strictSites')
+    ]).then(([, settings]) => {
+      const host = TabSentryPolicy.siteHost(sender.tab.url);
+      const strictSites = settings.strictSites || {};
+      sendResponse({
+        allowed: !!host && allowedSites[host] === true,
+        strict: !!host && strictSites[host] === true
+      });
+    }).catch(() => sendResponse({ allowed: false, strict: false }));
+    return true;
+  }
+
+  if (message.type === 'shield-diagnostic') {
+    const type = message.event?.type;
+    if (sender.tab?.incognito || !Number.isInteger(sender.tab?.id) ||
+        !['popup-prevented', 'overlay-neutralized'].includes(type)) return false;
+    const entry = {
+      type,
+      tabId: sender.tab.id,
+      frame: sender.frameId,
+      site: TabSentryPolicy.siteHost(sender.tab.url),
+      target: TabSentryDiagnostics.safeHost(message.event?.target)
+    };
+    void configurationReady.then(() => {
+      if (enabled) saveDiagnostic(entry);
+    }).catch(() => {});
+    return false;
+  }
+
   if (message.type === 'diagnostic-event') {
     const type = message.event?.type;
     if (sender.tab?.incognito || !Number.isInteger(sender.tab?.id) ||

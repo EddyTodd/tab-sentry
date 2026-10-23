@@ -7,7 +7,8 @@
   const MAX_EVENTS = 120;
   const types = new Set([
     'video-click', 'video-playing', 'video-error',
-    'popup-attempt', 'popup-allowed', 'popup-blocked'
+    'popup-attempt', 'popup-allowed', 'popup-blocked',
+    'popup-prevented', 'overlay-neutralized'
   ]);
   const contexts = new Set(['video', 'embedded-frame', 'play-control', 'covering-element']);
   const reasons = new Set(['matched-link', 'site-exception', 'unmatched-target']);
@@ -78,7 +79,7 @@
     let suspectedClickHijacks = 0;
     for (const clicked of filtered.filter((e) => e.type === 'video-click')) {
       const popup = filtered.find((e) =>
-        e.type === 'popup-attempt' &&
+        (e.type === 'popup-attempt' || e.type === 'popup-prevented') &&
         e.time >= clicked.time && e.time <= clicked.time + 2_000);
       const playback = filtered.find((e) =>
         e.type === 'video-playing' &&
@@ -96,6 +97,8 @@
         recordedEvents: timeline.length,
         popupAttempts: timeline.filter((e) => e.type === 'popup-attempt').length,
         blockedPopups: timeline.filter((e) => e.type === 'popup-blocked').length,
+        preventedPopups: timeline.filter((e) => e.type === 'popup-prevented').length,
+        repairedOverlays: timeline.filter((e) => e.type === 'overlay-neutralized').length,
         playbackStarts: timeline.filter((e) => e.type === 'video-playing').length,
         possibleClickHijacks: suspectedClickHijacks
       },

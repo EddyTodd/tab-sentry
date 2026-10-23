@@ -2,7 +2,7 @@
 
 A lightweight, privacy-conscious Chrome Manifest V3 extension for blocking **unwanted page-created tabs and popup windows**, without blocking ordinary browsing actions.
 
-> Scope for version 1.3: specialized popup and unwanted-tab protection. Full network-level ad blocking is a separate future phase; it is **not implemented**.
+> Scope for version 1.4: specialized popup and unwanted-tab protection. Full network-level ad blocking is a separate future phase; it is **not implemented**.
 
 ## Current features
 
@@ -14,6 +14,12 @@ A lightweight, privacy-conscious Chrome Manifest V3 extension for blocking **unw
 - Session blocked count and a list of up to 12 recent events (only source and destination hostnames and time, not full browsing URLs).
 - Redesigned keyboard-accessible toolbar popup with an explicit **Reset** action.
 - One-click **Diagnose Problem** button for video playback and popup issues, with a privacy-limited 60-second event timeline and clipboard copy.
+- Experimental **Playback Shield**, enabled by default whenever global protection is on:
+  - Prevents JavaScript popups started without user activation or during detected video clicks.
+  - Attempts to disable high-confidence external-link or transparent overlays covering large video/iframe players.
+  - Preserves deliberate new-tab links and ordinary active-click workflows in Balanced mode.
+  - Adds a per-site **Stronger popup blocking** switch, off by default, for particularly aggressive pages.
+  - Keeps the existing Chrome post-creation popup blocker as a fallback.
 - No framework, tracking, analytics, remote services, or third-party dependencies.
 
 **Protection remains off by default**, and can be enabled from the toolbar popup.
@@ -26,6 +32,20 @@ A lightweight, privacy-conscious Chrome Manifest V3 extension for blocking **unw
 4. Pin Tab Sentry and switch on **Protection** in the popup.
 
 After editing or pulling the source, click **Reload** on the extension card.
+
+## Playback Shield (experimental)
+
+Turn on the existing **Protection** switch, and leave **Playback Shield** enabled (the default). Normally no extra setup is needed. If a site repeatedly opens tabs in response to clicks, turn on **Stronger popup blocking** for the current site. This strict mode blocks page script calls to window.open except recent deliberate new-tab link gestures.
+
+How it works:
+- A document-start MAIN-world hook wraps window.open and prevents selected suspicious calls **before** Chrome creates a new tab.
+- A separate ISOLATED-world observer looks for large external-link or empty transparent overlays sitting over video/iframe players. It disables their pointer handling and, only if the first click already hit a suspect overlay covering a native video, may request playback within that same gesture.
+- The popup blocker based on Chrome navigation events continues to handle popups that bypass or replace the page-world hook.
+- A top-level site's exception or Strict setting is inherited by embedded frames when their content scripts can communicate with the background worker.
+
+**Limitations:** main-world scripts are visible and modifiable by web pages, so this is best-effort, not a security boundary. Popup APIs other than window.open, page redirects, non-DOM overlays, and unusual cross-origin players may require future fixes. Strict mode can disrupt legitimate login, payment and pop-out player windows. Disable the shield or choose **Allow popups on this site** when needed; previous inline overlay styles are restored when the shield is disabled in an open document.
+
+Playback Shield is **not** a full ad blocker and does not fake ad impressions, simulate ad viewing, or bypass server-side video-ad requirements. Anti-adblock warnings may still appear if other extensions or site scripts are blocking requests.
 
 ## One-click troubleshooting
 
@@ -69,6 +89,9 @@ Requires Node.js 18+.
     node --check popup.js
     node --check tab-policy.js
     node --check diagnostics.js
+    node --check shield-policy.js
+    node --check shield-main.js
+    node --check shield-content.js
 
 Test results must be verified externally; adding these tests alone does not confirm Chrome compatibility. Manually test normal tab gestures, OAuth/login windows, payments, ad-heavy pages, popup floods, and extension worker restarts before releasing.
 
